@@ -25,13 +25,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const mapElement = document.getElementById('map');
   if (!mapElement) return;
 
-  // Центр Алматы по умолчанию: Бостандыкский район
-  const initialDistrictKey = 'kz-ala-bostandyk';
-  const initialDistrict = GeoData.DISTRICTS[initialDistrictKey];
+  // Центр Алматы по умолчанию: Весь город
+  const initialDistrictKey = 'all';
   const map = L.map('map', {
     zoomControl: true,
     scrollWheelZoom: true
-  }).setView(initialDistrict.center, initialDistrict.zoom);
+  }).setView([43.2500, 76.9185], 11);
 
   // Слой тайлов Google Maps (Roadmap) с реальным API ключом
   const googleMapsTileLayer = L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
@@ -104,6 +103,53 @@ document.addEventListener('DOMContentLoaded', () => {
       map.removeLayer(districtGeoJsonLayer);
     }
 
+    if (districtKey === 'all') {
+      const allFeatures = Object.values(GeoData.DISTRICTS).map(d => d.geojson).filter(Boolean);
+      districtGeoJsonLayer = L.geoJSON(allFeatures, {
+        style: () => ({
+          color: '#6366f1',
+          weight: 2.5,
+          dashArray: '5, 5',
+          fillColor: '#4f46e5',
+          fillOpacity: 0.08
+        }),
+        onEachFeature: (feature, layer) => {
+          const d = GeoData.DISTRICTS[feature.properties.id];
+          if (d) {
+            const count = getDistrictPlaces(d.id, 'all').length;
+            layer.bindTooltip(`
+              <div style="font-family: inherit; font-size: 12px; padding: 2px;">
+                <strong>${d.name} (${d.name_kz})</strong><br/>
+                <span>Население: ${d.official_stats.population.toLocaleString('ru-RU')} чел.</span><br/>
+                <span>Плотность: ${d.official_stats.population_density_per_km2} чел/км²</span><br/>
+                <span style="color: #10b981;">Подтвержденных объектов: ${count}</span><br/>
+                <span style="color: #94a3b8; font-size: 10px;">(кликните для выбора района)</span>
+              </div>
+            `, { sticky: true, opacity: 0.95 });
+
+            layer.on('click', () => {
+              if (districtSelect) {
+                districtSelect.value = d.id;
+                districtSelect.dispatchEvent(new Event('change'));
+              }
+            });
+          }
+        }
+      }).addTo(map);
+
+      try {
+        const bounds = districtGeoJsonLayer.getBounds();
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [15, 15] });
+        }
+      } catch (e) {
+        map.setView([43.2500, 76.9185], 11);
+      }
+
+      updateCityWideBanner();
+      return;
+    }
+
     const district = GeoData.DISTRICTS[districtKey];
     if (!district) return;
 
@@ -148,6 +194,17 @@ document.addEventListener('DOMContentLoaded', () => {
     updateDistrictBanner(district, true);
   }
 
+  function updateCityWideBanner() {
+    const bannerBadge = document.getElementById('banner-badge');
+    const bannerTitle = document.getElementById('banner-title');
+    const bannerDesc = document.getElementById('banner-desc');
+    if (!bannerBadge || !bannerTitle || !bannerDesc) return;
+
+    if (bannerBadge) bannerBadge.textContent = 'Официальные границы OSM (Все 8 районов)';
+    bannerTitle.textContent = `г. Алматы (Все 8 административных районов)`;
+    bannerDesc.textContent = `Население: 2 280 000 чел. Объектов на карте: ${activePlaces.length} (Google Places API). Нажмите на любой район на карте или выберите в списке.`;
+  }
+
   function updateDistrictBanner(district, boundariesLoaded) {
     const bannerBadge = document.getElementById('banner-badge');
     const bannerTitle = document.getElementById('banner-title');
@@ -169,6 +226,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================================================
 
   function getDistrictPlaces(districtKey, category = 'all') {
+    if (districtKey === 'all') {
+      return activePlaces.filter(place => {
+        if (category !== 'all' && place.category !== category) return false;
+        return true;
+      });
+    }
+
     const district = GeoData.DISTRICTS[districtKey];
     if (!district || !district.geojson) return [];
 
@@ -286,6 +350,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (districtSelect) {
     districtSelect.addEventListener('change', (e) => {
       currentDistrictKey = e.target.value;
+      if (currentDistrictKey === 'all') {
+        renderDistrictBoundaries('all');
+        renderMarkers();
+        runScoringCalculation();
+        return;
+      }
       const target = GeoData.DISTRICTS[currentDistrictKey];
       if (target) {
         if (target.geojson) {
@@ -451,7 +521,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================================================
 
   function runScoringCalculation() {
-    const districtKey = document.getElementById('calc-district')?.value || currentDistrictKey;
+    let districtKey = document.getElementById('calc-district')?.value || currentDistrictKey;
+    if (districtKey === 'all') districtKey = 'kz-ala-bostandyk';
     const categoryKey = document.getElementById('calc-category')?.value || 'food';
     const budget = document.getElementById('calc-budget')?.value || 'medium';
     const experience = document.getElementById('calc-experience')?.value || 'experienced';
