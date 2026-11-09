@@ -667,6 +667,90 @@
         </div>
       </div>
     </section>
+    <!-- Модальное окно: Добавить организацию вручную -->
+    <div id="modal-add-place" class="modal-overlay" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">Добавить бизнес на карту</h3>
+          <button type="button" class="modal-close-btn" id="btn-close-add-modal">&times;</button>
+        </div>
+        <form id="form-add-place" class="modal-body">
+          <div class="form-group">
+            <label for="new-place-name" class="form-label">Название организации *</label>
+            <input type="text" id="new-place-name" class="form-input" placeholder="Например: Coffee Boom, СТО Автомир" required>
+          </div>
+          <div class="form-group">
+            <label for="new-place-category" class="form-label">Категория бизнеса *</label>
+            <select id="new-place-category" class="form-input">
+              <option value="food">☕ Общепит и кофейни</option>
+              <option value="education">🎓 Образование и курсы</option>
+              <option value="retail">🛍️ Ритейл и магазины</option>
+              <option value="health">💊 Медицина и аптеки</option>
+              <option value="tech">💻 IT и коворкинги</option>
+              <option value="services">✂️ Услуги и красота</option>
+              <option value="repair">🔧 Ремонт и автосервис</option>
+              <option value="tourism">🏔️ Туризм и гостиницы</option>
+              <option value="finance">📈 Финансы и банки</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="new-place-address" class="form-label">Адрес в Алматы</label>
+            <input type="text" id="new-place-address" class="form-input" placeholder="Например: проспект Абая, 150">
+          </div>
+          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="new-place-lat" class="form-label">Широта (Lat) *</label>
+              <input type="number" step="any" id="new-place-lat" class="form-input" placeholder="43.2385" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="new-place-lng" class="form-label">Долгота (Lng) *</label>
+              <input type="number" step="any" id="new-place-lng" class="form-input" placeholder="76.9185" required>
+            </div>
+          </div>
+          <div style="margin-bottom: 16px;">
+            <button type="button" id="btn-pick-on-map" class="btn btn-secondary btn-sm" style="width: 100%;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+              <span>📍 Указать точку кликом на карте</span>
+            </button>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-add-modal">Отмена</button>
+            <button type="submit" class="btn btn-primary btn-sm">Сохранить на карту</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Модальное окно: Импорт организаций (CSV / JSON) -->
+    <div id="modal-import-places" class="modal-overlay" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">Импорт организаций (CSV или JSON)</h3>
+          <button type="button" class="modal-close-btn" id="btn-close-import-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Загрузить файл (.csv или .json):</label>
+            <input type="file" id="file-import-input" accept=".csv,.json" class="form-input" style="padding: 8px;">
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 6px;">
+              Поддерживаются колонки: <code>name</code> (название), <code>category</code> (категория), <code>lat</code> (широта), <code>lng</code> (долгота), <code>address</code> (адрес).
+            </p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Или вставьте текст (CSV/JSON):</label>
+            <textarea id="text-import-input" class="form-input" rows="5" placeholder="Название;Категория;Широта;Долгота;Адрес&#10;My Cafe;food;43.2415;76.9450;ул. Абая 10"></textarea>
+          </div>
+          <div id="import-status-msg" style="font-size: 0.85rem; margin-bottom: 12px; display: none;"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-import-modal">Отмена</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-do-import">Импортировать на карту</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
 
   <!-- Подвал сайта -->

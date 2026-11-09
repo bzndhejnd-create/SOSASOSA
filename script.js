@@ -255,6 +255,11 @@ document.addEventListener('DOMContentLoaded', () => {
               <line x1="10" y1="14" x2="21" y2="3"></line>
             </svg>
           </a>
+          ${(place.source_id === 'user_custom' || place.source_id === 'file_import') ? `
+            <button onclick="window.removeOpportunityPlace('${place.id}')" style="margin-top: 8px; width: 100%; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #ef4444; padding: 5px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">
+              🗑️ Удалить эту точку
+            </button>
+          ` : ''}
         </div>
       `;
 
@@ -576,8 +581,320 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 8. Начальный запуск
+  // 7.5. Интерактивное добавление, импорт и экспорт организаций
   // ==========================================================================
+
+  const LOCAL_STORAGE_CUSTOM_KEY = 'opportunity_user_places_v1';
+
+  // Загружаем сохраненные пользователем точки из localStorage
+  function loadStoredCustomPlaces() {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_CUSTOM_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const combined = [...activePlaces, ...parsed];
+          const dedup = Analytics.deduplicatePlaces(combined, 20);
+          activePlaces = dedup.places;
+        }
+      }
+    } catch (e) {
+      console.warn('Не удалось загрузить сохраненные точки из localStorage:', e);
+    }
+  }
+
+  function saveStoredCustomPlaces(newCustomPlace) {
+    try {
+      const stored = JSON.parse(localStorage.getItem(LOCAL_STORAGE_CUSTOM_KEY) || '[]');
+      stored.push(newCustomPlace);
+      localStorage.setItem(LOCAL_STORAGE_CUSTOM_KEY, JSON.stringify(stored));
+    } catch (e) {
+      console.warn('Не удалось сохранить точку в localStorage:', e);
+    }
+  }
+
+  // Модальное окно ручного добавления
+  const modalAdd = document.getElementById('modal-add-place');
+  const btnOpenAdd = document.getElementById('btn-open-add-modal');
+  const btnCloseAdd = document.getElementById('btn-close-add-modal');
+  const btnCancelAdd = document.getElementById('btn-cancel-add-modal');
+  const formAddPlace = document.getElementById('form-add-place');
+  const btnPickOnMap = document.getElementById('btn-pick-on-map');
+  const inputLat = document.getElementById('new-place-lat');
+  const inputLng = document.getElementById('new-place-lng');
+
+  let isPickingOnMap = false;
+
+  if (btnOpenAdd) {
+    btnOpenAdd.addEventListener('click', () => {
+      if (modalAdd) modalAdd.style.display = 'flex';
+    });
+  }
+
+  function closeAddModal() {
+    if (modalAdd) modalAdd.style.display = 'none';
+    if (isPickingOnMap) {
+      isPickingOnMap = false;
+      mapElement.classList.remove('map-crosshair-mode');
+    }
+  }
+
+  if (btnCloseAdd) btnCloseAdd.addEventListener('click', closeAddModal);
+  if (btnCancelAdd) btnCancelAdd.addEventListener('click', closeAddModal);
+
+  // Выбор точки кликом на карте
+  if (btnPickOnMap) {
+    btnPickOnMap.addEventListener('click', () => {
+      isPickingOnMap = true;
+      if (modalAdd) modalAdd.style.display = 'none';
+      mapElement.classList.add('map-crosshair-mode');
+      if (liveDataLabel) {
+        liveDataLabel.innerHTML = '<strong style=\"color: #6366f1;\">📍 Режим выбора: кликните на карте, чтобы установить координаты заведения</strong>';
+      }
+    });
+  }
+
+  map.on('click', (e) => {
+    if (isPickingOnMap) {
+      isPickingOnMap = false;
+      mapElement.classList.remove('map-crosshair-mode');
+      const lat = Number(e.latlng.lat.toFixed(5));
+      const lng = Number(e.latlng.lng.toFixed(5));
+
+      if (inputLat) inputLat.value = lat;
+      if (inputLng) inputLng.value = lng;
+
+      if (modalAdd) modalAdd.style.display = 'flex';
+      initDataStatus();
+    }
+  });
+
+  if (formAddPlace) {
+    formAddPlace.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('new-place-name')?.value.trim();
+      const category = document.getElementById('new-place-category')?.value || 'food';
+      const address = document.getElementById('new-place-address')?.value.trim() || 'г. Алматы (адрес указан пользователем)';
+      const lat = parseFloat(inputLat?.value);
+      const lng = parseFloat(inputLng?.value);
+
+      if (!name || isNaN(lat) || isNaN(lng)) {
+        alert('Пожалуйста, заполните название и корректные координаты.');
+        return;
+      }
+
+      // Валидация Bounding Box Алматы
+      const val = Analytics.validateCoordinates(lat, lng, GeoData.ALMATY_BBOX);
+      if (!val.valid) {
+        alert('Координаты находятся за пределами Алматы: ' + val.reason);
+        return;
+      }
+
+      const newPlace = {
+        id: 'user_' + Date.now(),
+        name,
+        category,
+        address,
+        latitude: lat,
+        longitude: lng,
+        source: 'Добавлено пользователем',
+        source_id: 'user_custom',
+        last_verified_at: new Date().toISOString().split('T')[0],
+        confidence_status: 'USER_VERIFIED'
+      };
+
+      activePlaces.push(newPlace);
+      saveStoredCustomPlaces(newPlace);
+
+      closeAddModal();
+      formAddPlace.reset();
+      renderMarkers();
+      runScoringCalculation();
+      initDataStatus();
+    });
+  }
+
+  // Модальное окно импорта (CSV / JSON)
+  const modalImport = document.getElementById('modal-import-places');
+  const btnOpenImport = document.getElementById('btn-open-import-modal');
+  const btnCloseImport = document.getElementById('btn-close-import-modal');
+  const btnCancelImport = document.getElementById('btn-cancel-import-modal');
+  const btnDoImport = document.getElementById('btn-do-import');
+  const fileImportInput = document.getElementById('file-import-input');
+  const textImportInput = document.getElementById('text-import-input');
+  const importStatusMsg = document.getElementById('import-status-msg');
+
+  if (btnOpenImport) {
+    btnOpenImport.addEventListener('click', () => {
+      if (modalImport) modalImport.style.display = 'flex';
+      if (importStatusMsg) importStatusMsg.style.display = 'none';
+    });
+  }
+
+  function closeImportModal() {
+    if (modalImport) modalImport.style.display = 'none';
+  }
+
+  if (btnCloseImport) btnCloseImport.addEventListener('click', closeImportModal);
+  if (btnCancelImport) btnCancelImport.addEventListener('click', closeImportModal);
+
+  function parseCsvOrJson(rawText) {
+    const text = rawText.trim();
+    if (!text) return [];
+
+    // Попытка распарсить как JSON
+    if (text.startsWith('[') || text.startsWith('{')) {
+      try {
+        const json = JSON.parse(text);
+        const arr = Array.isArray(json) ? json : (json.places || json.items || [json]);
+        return arr.map(item => ({
+          name: item.name || item['название'] || 'Без названия',
+          category: item.category || item['категория'] || 'food',
+          address: item.address || item['адрес'] || 'г. Алматы',
+          latitude: parseFloat(item.latitude || item.lat || item['широта']),
+          longitude: parseFloat(item.longitude || item.lng || item.lon || item['долгота'])
+        })).filter(p => !isNaN(p.latitude) && !isNaN(p.longitude));
+      } catch (err) {}
+    }
+
+    // Парсим как CSV (с разделителем ; или ,)
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length < 2) return [];
+
+    const delimiter = lines[0].includes(';') ? ';' : ',';
+    const headers = lines[0].toLowerCase().split(delimiter).map(h => h.trim().replace(/['"]/g, ''));
+
+    const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('назв'));
+    const catIdx = headers.findIndex(h => h.includes('cat') || h.includes('катег'));
+    const latIdx = headers.findIndex(h => h === 'lat' || h.includes('шир') || h.includes('latitude'));
+    const lngIdx = headers.findIndex(h => h === 'lng' || h === 'lon' || h.includes('долг') || h.includes('longitude'));
+    const addrIdx = headers.findIndex(h => h.includes('addr') || h.includes('адрес'));
+
+    const places = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
+      if (cols.length < 3) continue;
+
+      const lat = parseFloat(cols[latIdx >= 0 ? latIdx : 2]);
+      const lng = parseFloat(cols[lngIdx >= 0 ? lngIdx : 3]);
+      if (isNaN(lat) || isNaN(lng)) continue;
+
+      places.push({
+        name: (nameIdx >= 0 && cols[nameIdx]) ? cols[nameIdx] : 'Импортированная точка #' + i,
+        category: (catIdx >= 0 && cols[catIdx]) ? cols[catIdx] : 'food',
+        address: (addrIdx >= 0 && cols[addrIdx]) ? cols[addrIdx] : 'г. Алматы',
+        latitude: lat,
+        longitude: lng
+      });
+    }
+
+    return places;
+  }
+
+  if (btnDoImport) {
+    btnDoImport.addEventListener('click', async () => {
+      let content = textImportInput ? textImportInput.value : '';
+
+      if (fileImportInput && fileImportInput.files && fileImportInput.files[0]) {
+        try {
+          content = await fileImportInput.files[0].text();
+        } catch (e) {
+          alert('Ошибка чтения файла: ' + e.message);
+          return;
+        }
+      }
+
+      const parsed = parseCsvOrJson(content);
+      if (parsed.length === 0) {
+        if (importStatusMsg) {
+          importStatusMsg.style.display = 'block';
+          importStatusMsg.innerHTML = '<span style=\"color: #ef4444;\">Не удалось распознать точки. Проверьте формат CSV или JSON.</span>';
+        }
+        return;
+      }
+
+      let addedCount = 0;
+      parsed.forEach(p => {
+        const val = Analytics.validateCoordinates(p.latitude, p.longitude, GeoData.ALMATY_BBOX);
+        if (val.valid) {
+          const item = {
+            id: 'import_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: p.name,
+            category: p.category,
+            address: p.address,
+            latitude: p.latitude,
+            longitude: p.longitude,
+            source: 'Импортировано из файла',
+            source_id: 'file_import',
+            last_verified_at: new Date().toISOString().split('T')[0],
+            confidence_status: 'IMPORTED'
+          };
+          activePlaces.push(item);
+          saveStoredCustomPlaces(item);
+          addedCount++;
+        }
+      });
+
+      if (importStatusMsg) {
+        importStatusMsg.style.display = 'block';
+        importStatusMsg.innerHTML = `<span style=\"color: #10b981;\">Успешно импортировано ${addedCount} объектов на карту!</span>`;
+      }
+
+      setTimeout(() => {
+        closeImportModal();
+        renderMarkers();
+        runScoringCalculation();
+        initDataStatus();
+      }, 1000);
+    });
+  }
+
+  // Экспорт точек в файл JSON
+  const btnExport = document.getElementById('btn-export-places');
+  if (btnExport) {
+    btnExport.addEventListener('click', () => {
+      if (activePlaces.length === 0) {
+        alert('Нет объектов для экспорта.');
+        return;
+      }
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(activePlaces, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute('href', dataStr);
+      downloadAnchor.setAttribute('download', 'almaty_businesses_export_' + new Date().toISOString().split('T')[0] + '.json');
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    });
+  }
+
+  // Сброс к исходной проверенной базе Google Places
+  const btnClear = document.getElementById('btn-clear-places');
+  if (btnClear) {
+    btnClear.addEventListener('click', () => {
+      if (confirm('Сбросить карту к исходному набору из 179 проверенных объектов Google Places?')) {
+        localStorage.removeItem(LOCAL_STORAGE_CUSTOM_KEY);
+        activePlaces = [...GeoData.VERIFIED_ORGANIZATIONS];
+        renderMarkers();
+        runScoringCalculation();
+        initDataStatus();
+      }
+    });
+  }
+
+  window.removeOpportunityPlace = function(id) {
+    activePlaces = activePlaces.filter(p => p.id !== id);
+    try {
+      const stored = JSON.parse(localStorage.getItem(LOCAL_STORAGE_CUSTOM_KEY) || '[]');
+      const filtered = stored.filter(p => p.id !== id);
+      localStorage.setItem(LOCAL_STORAGE_CUSTOM_KEY, JSON.stringify(filtered));
+    } catch(e) {}
+    renderMarkers();
+    runScoringCalculation();
+    initDataStatus();
+  };
+
+  // Загружаем сохраненные пользовательские точки
+  loadStoredCustomPlaces();
 
   initDataStatus();
   renderDistrictBoundaries(currentDistrictKey);
