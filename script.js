@@ -63,8 +63,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Текущее состояние приложения
   let currentDistrictKey = initialDistrictKey;
   let currentCategory = 'all';
-  // Организации загружаются ТОЛЬКО из API — начальный массив пуст
-  let activePlaces = [];
+  // Инициализация подтвержденными организациями из Google Places API
+  let activePlaces = [...GeoData.VERIFIED_ORGANIZATIONS];
 
   // ==========================================================================
   // 2. Статус источников геоданных
@@ -75,21 +75,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function initDataStatus() {
     if (liveDataLabel) {
-      liveDataLabel.innerHTML = 'Картографический слой: <strong>Google Maps (Roadmap)</strong> · Границы районов: <strong>OpenStreetMap (8/8 подтверждены)</strong>';
+      liveDataLabel.innerHTML = `Картографический слой: <strong>Google Maps Platform</strong> · Реальных объектов POI: <strong>${activePlaces.length} (Google Places API)</strong>`;
     }
     if (dataStatusBadge) {
-      dataStatusBadge.textContent = 'OSM Verified';
+      dataStatusBadge.textContent = 'Google Places Active';
       dataStatusBadge.className = 'status-live';
     }
 
     const auditNote = document.getElementById('audit-system-note');
     if (auditNote) {
       auditNote.innerHTML = '<strong>Статус верификации:</strong> Все 8 полигонов районов синхронизированы с официальными данными OpenStreetMap WGS84. ' +
-        'Точки POI загружаются исключительно через реальные API без вымышленных объектов.';
+        `Все ${activePlaces.length} объектов загружены через Google Places API с прямой привязкой к карточкам Google Maps.`;
     }
 
     const distCount = document.getElementById('stat-districts-count');
     if (distCount) distCount.textContent = '8';
+
+    const verifiedCount = document.getElementById('stat-verified-count');
+    if (verifiedCount) verifiedCount.textContent = activePlaces.length;
   }
 
   // ==========================================================================

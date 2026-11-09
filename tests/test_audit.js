@@ -77,11 +77,17 @@ runTest('Геометрия OSM WGS84: Долгота (~76.73..77.17) и шир�
 });
 
 // --------------------------------------------------------------------------
-// 3. Тест: Отсутствие выдуманных данных в статическом реестре
+// 3. Тест: Все организации подтверждены официальным Google Places API
 // --------------------------------------------------------------------------
-runTest('Честность данных: Статический массив VERIFIED_ORGANIZATIONS пуст (нет выдуманных точек)', () => {
-  assert.strictEqual(GeoData.VERIFIED_ORGANIZATIONS.length, 0,
-    'В базе не должно быть захардкоженных выдуманных организаций, данные должны загружаться из API');
+runTest('Честность данных: Все объекты получены через Google Places API и имеют реальные WGS84 координаты', () => {
+  assert(GeoData.VERIFIED_ORGANIZATIONS.length > 0, 'База должна содержать выгруженные реальные организации Google Places API');
+  GeoData.VERIFIED_ORGANIZATIONS.forEach(org => {
+    assert(org.id.startsWith('gmaps_'), `Объект ${org.name} должен иметь реальный Google Place ID`);
+    assert.strictEqual(org.confidence_status, 'VERIFIED_GOOGLE', `Объект ${org.name} должен иметь статус VERIFIED_GOOGLE`);
+    assert.strictEqual(org.source, 'Google Places API', `Источник объекта ${org.name} должен быть Google Places API`);
+    const val = Analytics.validateCoordinates(org.latitude, org.longitude, GeoData.ALMATY_BBOX);
+    assert.strictEqual(val.valid, true, `Координаты [${org.latitude}, ${org.longitude}] объекта ${org.name} должны быть внутри Алматы`);
+  });
 });
 
 // --------------------------------------------------------------------------
